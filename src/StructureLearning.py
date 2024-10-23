@@ -59,3 +59,48 @@ class K2Search(DirectedGraphSearchMethod):
                     break
         return graph
 
+
+class LocalDirectedGraphSearch(DirectedGraphSearchMethod):
+    def __init__(self, initial_graph: nx.DiGraph, k_max: int):
+        self.initial_graph = initial_graph
+        self.k_max = k_max
+
+    def fit(self, variables: list[Variable], data: np.ndarray) -> nx.DiGraph:
+        graph = self.initial_graph
+        y = bayesian_score(variables, graph, data)
+        for k in range(self.k_max):
+            graph_prime = self.rand_graph_neighbor(graph)
+            if len(list(nx.simple_cycles(graph_prime))) == 0:
+                y_prime = bayesian_score(variables, graph_prime, data)
+            else:
+                y_prime = -np.inf
+            if y_prime > y:
+                y, graph = y_prime, graph_prime
+        return graph
+
+    @staticmethod
+    def rand_graph_neighbor(graph: nx.DiGraph) -> nx.DiGraph:
+        n = graph.number_of_nodes()
+        i = np.random.randint(low=0, high=n)
+        j = (i + np.random.randint(low=1, high=n) - 1) % n
+        graph_prime = graph.copy()
+        if graph.has_edge(i, j):
+            graph_prime.remove_edge(i, j)
+        else:
+            graph_prime.add_edge(i, j)
+        return graph_prime
+
+
+def are_markvov_equiavalent(G: nx.DiGraph, H: nx.DiGraph) -> bool:
+    if ((G.number_of_nodes() != H.number_of_nodes()) or
+            (G.number_of_edges() != H.number_of_edges()) or
+            (not all([(H.has_edge(e[0], e[1]) or H.has_edge(e[1], e[0])) for e in G.edges]))):
+        return False
+    for (I, J) in [(G, H), (H, G)]:
+        for c in range(I.number_of_nodes()):
+            parents = list(I.predecessors(c))
+            for a, b in itertools.combinations(parents, 2):
+                if ((not I.has_edge(a, b)) and (not I.has_edge(b, a))
+                        and (not (J.has_edge(a, c) and J.has_edge(b, c)))):
+                    return False
+    return True
