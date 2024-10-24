@@ -115,3 +115,16 @@ class SimpleValueFunction(InterpolationValueFunction):
         u += (1 - w_tot) * self.theta[tuple(i)]
         return u
 
+
+class LinearRegressionValueFunction(ApproximateValueFunction):
+    def __init__(self, beta: Callable[[Any], np.ndarray], theta: np.ndarray):
+        self.beta = beta
+        self.theta = theta
+
+    def __call__(self, s: Any) -> float:
+        return np.dot(self.theta, self.beta(s))
+
+    def fit(self, S: list[Any], U: np.ndarray):
+        X = np.array([self.beta(s) for s in S])
+        self.theta = np.linalg.pinv(X) @ U
+
