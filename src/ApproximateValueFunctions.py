@@ -97,3 +97,21 @@ class MultilinearValueFunction(InterpolationValueFunction):
             u += self.theta[tuple(vertex_index)] * weight
         return u
 
+
+class SimpleValueFunction(InterpolationValueFunction):
+    def __call__(self, s: np.ndarray) -> float:
+        Delta = (s - self.o) / self.delta
+        # Multidimensional index of upper-right cell
+        i = np.minimum(np.floor(Delta).astype(int) + 1, np.array(self.theta.shape) - 1)
+        u = 0.0
+        s_prime = (s - (self.o + (self.delta * (i - 1)))) / self.delta
+        p = np.argsort(s_prime)
+        w_tot = 0.0
+        for j in p:
+            w = s_prime[j] - w_tot
+            u += w * self.theta[tuple(i)]
+            i[j] -= 1
+            w_tot += w
+        u += (1 - w_tot) * self.theta[tuple(i)]
+        return u
+
