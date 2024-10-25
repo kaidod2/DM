@@ -172,4 +172,85 @@ class HeuristicSearch(OnlinePlanningMethod):
     def __init__(self, P: MDP, U_hi: Callable[[Any], float],
                  d: int, m: int):
         self.P = P
-        self.U_hi = U_hi
+        self.U_hi = U_hi  # upper bound on value function
+        self.d = d  # depth
+        self.m = m  # number of simulations
+
+    def __call__(self, s: int | np.ndarray) -> Any:
+        U = np.array([self.U_hi(s) for s in self.P.S])
+        for _ in range(self.m):
+            self.simulate(U, s)
+        return self.P.greedy(U, s)[0]
+
+    def simulate(self, U: np.ndarray, s: int | np.ndarray):
+        for _ in range(self.d):
+            a, u = self.P.greedy(U, s)
+            U[s] = u
+            s = np.random.choice(self.P.S, p=[self.P.T(s, a, s_prime) for s_prime in self.P.S])
+
+    def extract_policy(self, s: int | np.ndarray) -> ValueFunctionPolicy:
+        U = np.array([self.U_hi(s) for s in self.P.S])
+        for _ in range(self.m):
+            self.simulate(U, s)
+        return ValueFunctionPolicy(self.P, U)
+
+
+class LabeledHeuristicSearch(OnlinePlanningMethod):
+    def __init__(self, P: MDP, U_hi: Callable[[Any], float],
+                 d: int, delta: float):
+        self.P = P
+        self.U_hi = U_hi  # upper bound on value function
+        self.d = d
+        self.delta = delta  # gap threshold
+
+    def __call__(self, s: int | np.ndarray) -> Any:
+        U, solved = np.array([self.U_hi(s) for s in self.P.S]), set()
+        while s not in solved:
+            self.simulate(U, solved, s)
+        return self.P.greedy(U, s)[0]
+
+    def simulate(self, U: np.ndarray, solved: set[int] | set[np.ndarray], s: int | np.ndarray):
+        visited = []
+        for _ in range(self.d):
+            if s in solved:
+                break
+            visited.append(s)
+            a, u = self.P.greedy(U, s)
+            U[s] = u
+            s = np.random.choice(self.P.S, p=[self.P.T(s, a, s_prime) for s_prime in self.P.S])
+        while len(visited) != 0:
+            if self.label(U, solved, visited.pop()):
+                break
+
+    def label(self, U: np.ndarray, solved: set[int] | set[np.ndarray], s: int | np.ndarray):
+        if s in solved:
+            return False
+        founded, envelope = self.expand(U, solved, s)
+        if founded:
+            for s in reversed(envelope):
+                U[s] = self.P.greedy(U, s)[1]
+
+        else:
+            solved.update(envelope)
+        return founded
+
+    def expand(self, U: np.ndarray,
+               solved: set[int] | set[np.ndarray], s: int | np.ndarray) -> tuple[bool, list[int] | list[np.ndarray]]:
+        found, to_expand, envelope = False, {s}, []
+        while len(to_expand) != 0:
+            s = to_expand.pop()
+            envelope.append(s)
+            a, u = self.P.greedy(U, s)
+            if np.abs(U[s] - u) > self.delta:
+                found = True
+            else:
+                for s_prime in self.P.S:
+                    if (self.P.T(s, a, s_prime) > 0) and (s_prime not in solved.union(envelope)):
+                        to_expand.add(s_prime)
+        return found, envelope
+
+    def extract_policy(self, s: int | np.ndarray) -> ValueFunctionPolicy:
+        U, solved = np.array([self.U_hi(s) for s in self.P.S]), set()
+        while s not in solved:
+            self.simulate(U, solved, s)
+        return ValueFunctionPolicy(self.P, U)
